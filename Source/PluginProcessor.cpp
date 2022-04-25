@@ -22,7 +22,7 @@ Parametric_EQ_PluginAudioProcessor::Parametric_EQ_PluginAudioProcessor()
                        )
 #endif
 {
-    int test = 0;
+   
 }
 
 Parametric_EQ_PluginAudioProcessor::~Parametric_EQ_PluginAudioProcessor()
