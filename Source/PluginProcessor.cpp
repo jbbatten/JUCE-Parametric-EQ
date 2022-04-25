@@ -22,6 +22,7 @@ Parametric_EQ_PluginAudioProcessor::Parametric_EQ_PluginAudioProcessor()
                        )
 #endif
 {
+    int test = 0;
 }
 
 Parametric_EQ_PluginAudioProcessor::~Parametric_EQ_PluginAudioProcessor()
@@ -94,14 +95,13 @@ void Parametric_EQ_PluginAudioProcessor::changeProgramName (int index, const juc
 //==============================================================================
 void Parametric_EQ_PluginAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+
+
 }
 
 void Parametric_EQ_PluginAudioProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
