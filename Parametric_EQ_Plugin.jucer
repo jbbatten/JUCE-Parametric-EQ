@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="dEdE8e" name="Parametric_EQ_Plugin" projectType="audioplug"
               useAppConfig="0" addUsingNamespaceToJuceHeader="0" displaySplashScreen="1"
-              jucerFormatVersion="1">
+              jucerFormatVersion="1" cppLanguageStandard="17">
   <MAINGROUP id="DFqC6U" name="Parametric_EQ_Plugin">
     <GROUP id="{EE3E92C9-6932-AB6D-14E6-E4DC2CE44BE8}" name="Source">
       <FILE id="OrwTAA" name="PluginProcessor.cpp" compile="1" resource="0"
