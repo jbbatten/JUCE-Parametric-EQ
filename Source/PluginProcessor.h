@@ -100,10 +100,16 @@ private:
 		HiCut
 	};
 
+	void peakFilterUpdate(ChainSettings& settings);
+	void cutFilterUpdate(ChainSettings& settings);
+	void shelfFilterUpdate(ChainSettings& settings);
+
 	//Low Cut > Low Shelf > Low Mid Peak > Mid Peak > Hi Shelf > Hi Cut
 	using Filter = juce::dsp::IIR::Filter<float>;
 	using CutFilter = juce::dsp::ProcessorChain<Filter, Filter, Filter, Filter>;
 	using MonoChain = juce::dsp::ProcessorChain<CutFilter, Filter, Filter, Filter, Filter, CutFilter>;
+
+	static void updateCoefficients(Filter::CoefficientsPtr& oldCoe, const Filter::CoefficientsPtr& newCoe);
 
 	MonoChain leftChannel, rightChannel;
 
