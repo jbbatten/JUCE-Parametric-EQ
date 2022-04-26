@@ -94,6 +94,16 @@ void Parametric_EQ_PluginAudioProcessor::changeProgramName(int index, const juce
 //==============================================================================
 void Parametric_EQ_PluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+	juce::dsp::ProcessSpec spec;
+
+	spec.maximumBlockSize = samplesPerBlock;
+	spec.numChannels = 1;
+	spec.sampleRate = sampleRate;
+
+	leftChannel.prepare(spec);
+	rightChannel.prepare(spec);
+
+
 }
 
 void Parametric_EQ_PluginAudioProcessor::releaseResources()
@@ -132,27 +142,29 @@ void Parametric_EQ_PluginAudioProcessor::processBlock(juce::AudioBuffer<float>& 
 	const auto totalNumInputChannels = getTotalNumInputChannels();
 	const auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-	// In case we have more outputs than inputs, this code clears any output
-	// channels that didn't contain input data, (because these aren't
-	// guaranteed to be empty - they may contain garbage).
-	// This is here to avoid people getting screaming feedback
-	// when they first compile a plugin, but obviously you don't need to keep
-	// this code if your algorithm always overwrites all the output channels.
+
 	for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
 		buffer.clear(i, 0, buffer.getNumSamples());
 
-	// This is the place where you'd normally do the guts of your plugins
-	// audio processing...
-	// Make sure to reset the state if your inner loop is processing
-	// the samples and the outer loop is handling the channels.
-	// Alternatively, you can process the samples with the channels
-	// interleaved by keeping the same state.
-	for (int channel = 0; channel < totalNumInputChannels; ++channel)
-	{
-		auto* channelData = buffer.getWritePointer(channel);
+	ChainSettings settings = getChainSettings(apvts);
 
-		// ..do something to the data...
-	}
+	juce::ReferenceCountedObjectPtr<juce::dsp::IIR::Coefficients<float>> lowShelfCoe;
+	lowShelfCoe = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(), settings.lowShelfFreq, settings.lowShelfQ,juce::Decibels::decibelsToGain(settings.lowShelfGainDB));
+
+	*leftChannel.get<ChainPos::LowShelf>().coefficients = *lowShelfCoe;
+	*rightChannel.get<ChainPos::LowShelf>().coefficients = *lowShelfCoe;
+
+	const juce::dsp::AudioBlock<float> block(buffer);
+
+	auto left_channel_block = block.getSingleChannelBlock(0);
+	auto right_channel_block = block.getSingleChannelBlock(1);
+
+	juce::dsp::ProcessContextReplacing<float> left_context(left_channel_block);
+	juce::dsp::ProcessContextReplacing<float> right_context(right_channel_block);
+
+	leftChannel.process(left_context);
+	rightChannel.process(right_context);
+
 }
 
 //==============================================================================
@@ -182,6 +194,35 @@ void Parametric_EQ_PluginAudioProcessor::setStateInformation(const void* data, i
 	// whose contents will have been created by the getStateInformation() call.
 }
 
+ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts)
+{
+	ChainSettings settings;
+
+	settings.lowCutFreq = apvts.getRawParameterValue("LOWCUTFREQ")->load();
+	settings.lowCutSlope = apvts.getRawParameterValue("LOWCUTSLOPE")->load();
+
+	settings.lowShelfFreq = apvts.getRawParameterValue("LOWSHELFFREQ")->load();
+	settings.lowShelfGainDB = apvts.getRawParameterValue("LOWSHELFGAIN")->load();
+	settings.lowShelfQ = apvts.getRawParameterValue("LOWSHELFQ")->load();
+
+	settings.lowMidFreq = apvts.getRawParameterValue("LOWMIDPEAKFREQ")->load();
+	settings.lowMidGainDB = apvts.getRawParameterValue("LOWMIDPEAKGAIN")->load();
+	settings.lowMidQ = apvts.getRawParameterValue("LOWMIDPEAKQ")->load();
+
+	settings.midFreq = apvts.getRawParameterValue("MIDPEAKFREQ")->load();
+	settings.midGainDB = apvts.getRawParameterValue("MIDPEAKGAIN")->load();
+	settings.midQ = apvts.getRawParameterValue("MIDPEAKQ")->load();
+
+	settings.hiShelfFreq = apvts.getRawParameterValue("HISHELFFREQ")->load();
+	settings.hiShelfGainDB = apvts.getRawParameterValue("HISHELFGAIN")->load();
+	settings.hiShelfQ = apvts.getRawParameterValue("HISHELFQ")->load();
+
+	settings.hiCutFreq = apvts.getRawParameterValue("HICUTFREQ")->load();
+	settings.highCutSlope = apvts.getRawParameterValue("HICUTSLOPE")->load();
+
+	return settings;
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout Parametric_EQ_PluginAudioProcessor::createParamLayout()
 {
 	//createing parameter layout, mapping all values to sliders
@@ -195,33 +236,35 @@ juce::AudioProcessorValueTreeState::ParameterLayout Parametric_EQ_PluginAudioPro
 		str<<" db/Octave";
 		choicesArray.add(str);
 	}
+	//Low Cut > Low Shelf > Low Mid Peak > Mid Peak > Hi Shelf > Hi Cut
 
-	//Low and High cuts
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("HICUTFREQ", "Hi Cut Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f, 1.0f),20000.f));
-	param_layout.add(std::make_unique<juce::AudioParameterChoice>("HICUTSLOPE", "Hi Cut Slope", choicesArray, 0.0f));
-
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWCUTFREQ", "Low Cut Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,1.f ),20.f));
+	//Low Cut Filter
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWCUTFREQ", "Low Cut Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,1.f ),20.0f));
 	param_layout.add(std::make_unique<juce::AudioParameterChoice>("LOWCUTSLOPE", "Low Cut Slope", choicesArray, 0.0f));
 
+	//Low Shelf
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWSHELFFREQ", "Low Shelf Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,0.3f ),150.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWSHELFGAIN", "Low Shelf Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWSHELFQ", "Low Shelf Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
+
 	//Low Mid Peak
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWMIDPEAKFREQ", "Low Mid Peak_Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,1.0f ),750.f));
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWMIDGAIN", "Low Mid Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWMIDQ", "Low Mid Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWMIDPEAKFREQ", "Low Mid Peak_Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,0.3f ),750.f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWMIDPEAKGAIN", "Low Mid Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWMIDPEAKQ", "Low Mid Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
 
 	//Mid Peak
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("MIDPEAKFREQ", "Mid Peak Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,1.0f ),2500.0f));
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("MIDGAIN", "Mid Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("MIDQ", "Mid Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("MIDPEAKFREQ", "Mid Peak Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,0.4f ),3000.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("MIDPEAKGAIN", "Mid Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("MIDPEAKQ", "Mid Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
 
 	//Hi Shelf
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("HISHELFFREQ", "Hi Shelf Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,1.0f ),8000.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("HISHELFFREQ", "Hi Shelf Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,0.4f ),8000.0f));
 	param_layout.add(std::make_unique<juce::AudioParameterFloat>("HISHELFGAIN", "Hi Shelf Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
 	param_layout.add(std::make_unique<juce::AudioParameterFloat>("HISHELFQ", "Hi Shelf Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
 
-	//Low Shelf
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWSHELFFREQ", "Low Shelf Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f,1.0f ),150.0f));
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWSHELFGAIN", "Low Shelf Gain", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.5f,1.0f ),0.0f));
-	param_layout.add(std::make_unique<juce::AudioParameterFloat>("LOWSHELFQ", "Low Shelf Q", juce::NormalisableRange<float>(0.1f, 10.0f, 0.05f,1.0f ),1.0f));
+	//Hi Cut Filter
+	param_layout.add(std::make_unique<juce::AudioParameterFloat>("HICUTFREQ", "Hi Cut Freq", juce::NormalisableRange<float>(20.0f, 20000.f, 1.0f, 1.0f),20000.0f));
+	param_layout.add(std::make_unique<juce::AudioParameterChoice>("HICUTSLOPE", "Hi Cut Slope", choicesArray, 0.0f));
 
 
 	return param_layout;
